@@ -31,7 +31,7 @@ const (
 
 var (
 	SEARCH_TERMS_MODEL     = MINIMAX_M2.Name()
-	SEARCH_TERMS_PROVIDERS = []string{MINIMAX_M2["Minimax"]}
+	SEARCH_TERMS_PROVIDERS = []string{MINIMAX_M2["Google"]}
 )
 
 // SearchTermAgent - The obsessed search term craftsman
@@ -39,12 +39,12 @@ type SearchTermAgent struct {
 	// Core inputs
 	theme        string
 	baseKeywords []string
-	
+
 	// API config
-	apiKey       string
-	modelName    string
-	providers    []string
-	
+	apiKey    string
+	modelName string
+	providers []string
+
 	// Current state
 	currentTerms []string
 	iteration    int
@@ -59,10 +59,10 @@ type SearchTermQuality struct {
 	HasValueTerms  bool // e.g., "unlimited X", "free X trial"
 	HasFormatMix   bool // e.g., "X audiobooks", "X ebooks"
 	HasUserIntent  bool // e.g., "X for beginners", "X for commute"
-	
+
 	// Diversity
 	DiversityScore float64 // How unique are the terms?
-	
+
 	// Coverage
 	TermCount int
 }
@@ -86,7 +86,7 @@ func NewSearchTermAgent(theme string, baseKeywords []string, apiKey string) *Sea
 // Generate - The main loop: 1 initial call + up to 9 refinement calls
 func (a *SearchTermAgent) Generate(ctx context.Context) ([]string, error) {
 	log.Printf("🔍 Search Term Specialist started for theme: %s", a.theme)
-	
+
 	// CALL 1: Generate initial search terms
 	terms, err := a.generateInitialTerms(ctx)
 	if err != nil {
@@ -94,18 +94,18 @@ func (a *SearchTermAgent) Generate(ctx context.Context) ([]string, error) {
 	}
 	a.currentTerms = terms
 	log.Printf("✨ Generated %d initial terms", len(terms))
-	
+
 	// CALLS 2-10: Refinement iterations (up to 9 more calls)
 	for a.iteration < MAX_REFINEMENT_ITERATIONS {
 		// Evaluate quality locally (NO API call here!)
 		quality := a.evaluateSearchTermQuality()
-		
+
 		// Check if we're good enough
 		if a.isGoodEnough(quality) {
 			log.Printf("✅ Quality target reached after %d total calls", a.iteration+1)
 			break
 		}
-		
+
 		// Refine the terms (1 API call per iteration)
 		log.Printf("🔄 Refinement iteration %d: improving coverage...", a.iteration+1)
 		refined, err := a.refineTermsIteration(ctx, quality)
@@ -113,11 +113,11 @@ func (a *SearchTermAgent) Generate(ctx context.Context) ([]string, error) {
 			log.Printf("⚠️  Refinement %d failed, keeping current terms: %v", a.iteration+1, err)
 			break // Don't fail completely, just stop refining
 		}
-		
+
 		a.currentTerms = refined
 		a.iteration++
 	}
-	
+
 	log.Printf("🎉 Final: %d terms after %d total API calls", len(a.currentTerms), a.iteration+1)
 	return a.currentTerms, nil
 }
@@ -132,9 +132,9 @@ func (a *SearchTermAgent) generateInitialTerms(ctx context.Context) ([]string, e
 		openrouter.WithHTTPReferer("https://github.com/booktok-hype-hub"),
 		openrouter.WithXTitle("Search Term Specialist"),
 	)
-	
+
 	keywordList := strings.Join(a.baseKeywords, ", ")
-	
+
 	// HARDCODED search term generation prompt - SPECIALIZED!
 	systemPrompt := `You are a SEO search term specialist. Your ONLY job is generating highly specific, conversion-focused search terms for book discovery and audiobook services.
 
@@ -155,9 +155,9 @@ REQUIREMENTS - You MUST include diverse search patterns:
 ✓ Specific use cases (e.g., "X for family", "X for kids")
 
 Make them SPECIFIC and CONVERSION-FOCUSED!
-Use the submit_search_terms tool with EXACTLY %d terms.`, 
+Use the submit_search_terms tool with EXACTLY %d terms.`,
 		TARGET_SEARCH_TERM_COUNT, a.theme, keywordList, TARGET_SEARCH_TERM_COUNT)
-	
+
 	resp, err := client.CreateChatCompletion(ctx, openrouter.ChatCompletionRequest{
 		Model: a.modelName,
 		Messages: []openrouter.ChatCompletionMessage{
@@ -177,11 +177,11 @@ Use the submit_search_terms tool with EXACTLY %d terms.`,
 			AllowFallbacks: boolPtr(false),
 		},
 	})
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return a.extractSearchTerms(resp)
 }
 
@@ -195,13 +195,13 @@ func (a *SearchTermAgent) refineTermsIteration(ctx context.Context, quality Sear
 		openrouter.WithHTTPReferer("https://github.com/booktok-hype-hub"),
 		openrouter.WithXTitle("Search Term Specialist"),
 	)
-	
+
 	// Build FOCUSED refinement prompt - NO MESSAGE HISTORY!
 	// Just current terms + what's missing = STATELESS!
 	missingPatterns := a.identifyMissingPatterns(quality)
-	
+
 	systemPrompt := `You are a SEO search term refinement specialist. You improve existing search terms by adding missing patterns and increasing diversity.`
-	
+
 	userPrompt := fmt.Sprintf(`Refine these %d search terms for theme "%s":
 
 CURRENT TERMS:
@@ -222,7 +222,7 @@ Use the submit_search_terms tool with EXACTLY %d terms.`,
 		missingPatterns,
 		TARGET_SEARCH_TERM_COUNT,
 		TARGET_SEARCH_TERM_COUNT)
-	
+
 	resp, err := client.CreateChatCompletion(ctx, openrouter.ChatCompletionRequest{
 		Model: a.modelName,
 		Messages: []openrouter.ChatCompletionMessage{
@@ -242,11 +242,11 @@ Use the submit_search_terms tool with EXACTLY %d terms.`,
 			AllowFallbacks: boolPtr(false),
 		},
 	})
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return a.extractSearchTerms(resp)
 }
 
@@ -259,60 +259,60 @@ func (a *SearchTermAgent) evaluateSearchTermQuality() SearchTermQuality {
 	quality := SearchTermQuality{
 		TermCount: len(a.currentTerms),
 	}
-	
+
 	termsLower := make([]string, len(a.currentTerms))
 	for i, term := range a.currentTerms {
 		termsLower[i] = strings.ToLower(term)
 	}
-	
+
 	// HARDCODED pattern detection - SEARCH TERM SPECIFIC!
 	for _, term := range termsLower {
 		// Comparison patterns
-		if strings.Contains(term, " vs ") || strings.Contains(term, " versus ") || 
-		   strings.Contains(term, "alternative") || strings.Contains(term, "comparison") {
+		if strings.Contains(term, " vs ") || strings.Contains(term, " versus ") ||
+			strings.Contains(term, "alternative") || strings.Contains(term, "comparison") {
 			quality.HasComparisons = true
 		}
-		
+
 		// Question patterns
 		if strings.HasPrefix(term, "where ") || strings.HasPrefix(term, "how ") ||
-		   strings.HasPrefix(term, "what ") || strings.HasPrefix(term, "which ") {
+			strings.HasPrefix(term, "what ") || strings.HasPrefix(term, "which ") {
 			quality.HasQuestions = true
 		}
-		
+
 		// Best/Top lists
 		if strings.Contains(term, "best ") || strings.Contains(term, "top ") ||
-		   strings.Contains(term, "most popular") {
+			strings.Contains(term, "most popular") {
 			quality.HasBestLists = true
 		}
-		
+
 		// Value terms
 		if strings.Contains(term, "unlimited") || strings.Contains(term, "free") ||
-		   strings.Contains(term, "trial") || strings.Contains(term, "affordable") {
+			strings.Contains(term, "trial") || strings.Contains(term, "affordable") {
 			quality.HasValueTerms = true
 		}
-		
+
 		// Format mix
 		if strings.Contains(term, "audiobook") || strings.Contains(term, "ebook") ||
-		   strings.Contains(term, "book") || strings.Contains(term, "magazine") {
+			strings.Contains(term, "book") || strings.Contains(term, "magazine") {
 			quality.HasFormatMix = true
 		}
-		
+
 		// User intent
 		if strings.Contains(term, " for ") {
 			quality.HasUserIntent = true
 		}
 	}
-	
+
 	// Calculate diversity (simple: unique word count ratio)
 	quality.DiversityScore = a.calculateDiversity(termsLower)
-	
+
 	return quality
 }
 
 func (a *SearchTermAgent) calculateDiversity(terms []string) float64 {
 	wordSet := make(map[string]bool)
 	totalWords := 0
-	
+
 	for _, term := range terms {
 		words := strings.Fields(term)
 		totalWords += len(words)
@@ -320,11 +320,11 @@ func (a *SearchTermAgent) calculateDiversity(terms []string) float64 {
 			wordSet[word] = true
 		}
 	}
-	
+
 	if totalWords == 0 {
 		return 0
 	}
-	
+
 	return float64(len(wordSet)) / float64(totalWords)
 }
 
@@ -334,16 +334,28 @@ func (a *SearchTermAgent) isGoodEnough(quality SearchTermQuality) bool {
 	if quality.TermCount != TARGET_SEARCH_TERM_COUNT {
 		return false
 	}
-	
+
 	// Must cover at least 4 out of 6 patterns
 	patternCount := 0
-	if quality.HasComparisons { patternCount++ }
-	if quality.HasQuestions { patternCount++ }
-	if quality.HasBestLists { patternCount++ }
-	if quality.HasValueTerms { patternCount++ }
-	if quality.HasFormatMix { patternCount++ }
-	if quality.HasUserIntent { patternCount++ }
-	
+	if quality.HasComparisons {
+		patternCount++
+	}
+	if quality.HasQuestions {
+		patternCount++
+	}
+	if quality.HasBestLists {
+		patternCount++
+	}
+	if quality.HasValueTerms {
+		patternCount++
+	}
+	if quality.HasFormatMix {
+		patternCount++
+	}
+	if quality.HasUserIntent {
+		patternCount++
+	}
+
 	// Must have good diversity
 	return patternCount >= 4 && quality.DiversityScore >= 0.6
 }
@@ -351,7 +363,7 @@ func (a *SearchTermAgent) isGoodEnough(quality SearchTermQuality) bool {
 // identifyMissingPatterns - HARDCODED search term pattern knowledge
 func (a *SearchTermAgent) identifyMissingPatterns(quality SearchTermQuality) string {
 	var missing []string
-	
+
 	if !quality.HasComparisons {
 		missing = append(missing, "- Comparison terms (e.g., 'X vs Y', 'X alternative')")
 	}
@@ -370,11 +382,11 @@ func (a *SearchTermAgent) identifyMissingPatterns(quality SearchTermQuality) str
 	if !quality.HasUserIntent {
 		missing = append(missing, "- User intent (e.g., 'X for beginners', 'X for commute')")
 	}
-	
+
 	if len(missing) == 0 {
 		return "None - improve diversity and specificity!"
 	}
-	
+
 	return strings.Join(missing, "\n")
 }
 
@@ -411,20 +423,20 @@ func (a *SearchTermAgent) extractSearchTerms(resp openrouter.ChatCompletionRespo
 	if len(resp.Choices) == 0 || len(resp.Choices[0].Message.ToolCalls) == 0 {
 		return nil, fmt.Errorf("no tool call in response")
 	}
-	
+
 	var result struct {
 		SearchTerms []string `json:"search_terms"`
 	}
-	
+
 	args := resp.Choices[0].Message.ToolCalls[0].Function.Arguments
 	if err := json.Unmarshal([]byte(args), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse tool arguments: %w", err)
 	}
-	
+
 	if len(result.SearchTerms) != TARGET_SEARCH_TERM_COUNT {
 		return nil, fmt.Errorf("expected %d terms, got %d", TARGET_SEARCH_TERM_COUNT, len(result.SearchTerms))
 	}
-	
+
 	return result.SearchTerms, nil
 }
 

@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	GLOBAL_AI_MODEL    = KIMI_K2_THINKING.Name()
+	GLOBAL_AI_MODEL     = KIMI_K2_THINKING.Name()
 	GLOBAL_AI_PROVIDERS = []string{KIMI_K2_THINKING["Google"]}
 )
+
 func main() {
 	fmt.Println("🤖 Landing Page Agent Started")
 
@@ -22,11 +23,11 @@ func main() {
 	}
 
 	fmt.Print("💡 What landing page idea? (e.g., romance books, thriller audiobooks): ")
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	idea, _ := reader.ReadString('\n')
 	idea = strings.TrimSpace(idea)
-	
+
 	if idea == "" {
 		fmt.Println("❌ No idea provided")
 		return
