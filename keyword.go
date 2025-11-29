@@ -15,16 +15,26 @@ var (
 	KEYWORD_PROVIDERS = GLOBAL_AI_PROVIDERS
 )
 
-// generateKeywords generates SEO keywords using the modular agent framework
 func generateKeywords(ctx context.Context, apiKey, theme string) ([]string, error) {
-	// 🎯 Configure the agent externally (maximum flexibility!)
-	config := AgentConfig{
-		ModelName: KEYWORD_MODEL,
-		Providers: KEYWORD_PROVIDERS,
-		
-		SystemPrompt: "You are a SEO expert specializing in book discovery and audiobook streaming services.",
-		
-		UserPromptFormat: `Generate 8 SEO keywords for a Nextory landing page about "%s".
+	client := openrouter.NewClient(
+		apiKey,
+		openrouter.WithXTitle("BookTok Landing Page Agent"),
+		openrouter.WithHTTPReferer("https://github.com/booktok-hype-hub"),
+	)
+
+	resp, err := client.CreateChatCompletion(ctx, openrouter.ChatCompletionRequest{
+		Model: KEYWORD_MODEL,
+		Messages: []openrouter.ChatCompletionMessage{
+			{
+				Role: openrouter.ChatMessageRoleSystem,
+				Content: openrouter.Content{
+					Text: "You are a SEO expert specializing in book discovery and audiobook streaming services.",
+				},
+			},
+			{
+				Role: openrouter.ChatMessageRoleUser,
+				Content: openrouter.Content{
+					Text: fmt.Sprintf(`Generate 8 SEO keywords for a Nextory landing page about "%s".
 
 Consider various angles based on theme, for example:
 - Format variations: audiobooks, ebooks, magazines
@@ -32,8 +42,10 @@ Consider various angles based on theme, for example:
 - Value propositions: unlimited, family, streaming, free trial
 - Use cases: for commute, for family, for kids
 
-Mix broad discovery terms with long-tail conversion keywords. Use the submit_keywords tool.`,
-
+Mix broad discovery terms with long-tail conversion keywords. Use the submit_keywords tool.`, theme),
+				},
+			},
+		},
 		Tools: []openrouter.Tool{
 			{
 				Type: openrouter.ToolTypeFunction,
@@ -54,33 +66,31 @@ Mix broad discovery terms with long-tail conversion keywords. Use the submit_key
 				},
 			},
 		},
-		
-		Temperature:   0.7,
-		MaxIterations: 3,
-		
-		APIKey:      apiKey,
-		HTTPReferer: "https://github.com/booktok-hype-hub",
-		XTitle:      "BookTok Landing Page Agent",
-	}
-	
-	// 🚀 Run the thinking loop!
-	result := RunAgent(ctx, config, theme)
-	
-	if !result.Success {
-		return nil, fmt.Errorf("agent failed: %w", result.Error)
-	}
-	
-	// Extract keywords using the helper function
-	keywords, err := ExtractKeywords(result)
+		Temperature: 0.7,
+		Provider: &openrouter.ChatProvider{
+			Order:          KEYWORD_PROVIDERS,
+			AllowFallbacks: boolPtr(false),
+		},
+	})
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("AI failed: %w", err)
 	}
-	
-	// Add the theme itself as a keyword (preserving original behavior)
-	keywords = append(keywords, strings.ToLower(theme))
-	
-	log.Printf("✨ Generated %d keywords in %d iterations", len(keywords), result.Iterations)
-	return keywords, nil
+
+	if len(resp.Choices) > 0 && len(resp.Choices[0].Message.ToolCalls) > 0 {
+		var keywordResult struct {
+			Keywords []string `json:"keywords"`
+		}
+		args := resp.Choices[0].Message.ToolCalls[0].Function.Arguments
+		if json.Unmarshal([]byte(args), &keywordResult) == nil {
+			keywordResult.Keywords = append(keywordResult.Keywords, strings.ToLower(theme))
+			log.Printf("✨ Generated %d keywords", len(keywordResult.Keywords))
+			return keywordResult.Keywords, nil
+		}
+	}
+
+	log.Println("⚠️  No valid tool call, returning error")
+	return nil, fmt.Errorf("no valid tool call")
 }
 
 func boolPtr(b bool) *bool {

@@ -5,277 +5,433 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	openrouter "github.com/revrost/go-openrouter"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🧠 AI AGENT - Pure Thinking Engine with THINK → ACT → OBSERVE → REFINE Loop
+// 🔍 SEARCH TERM SPECIALIST - A Hyper-Focused Search Query Generation Machine
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// This agent has ONE JOB: Generate amazing search terms for SEO optimization.
+// It's NOT a generic framework - it's a SPECIALIST with hardcoded domain knowledge!
+//
+// Constraints:
+// - Max 10 API calls per run (1 initial + up to 9 refinements)
+// - Each call has independent context (no exponential message history)
+// - Quality evaluation happens locally (no extra API calls)
+//
 // ═══════════════════════════════════════════════════════════════════════════
 
-// AgentConfig defines the complete external configuration for an agent instance.
-// Zero hardcoded values - everything is injected!
-type AgentConfig struct {
-	// Model configuration
-	ModelName string   // e.g., "minimax/minimax-m2"
-	Providers []string // e.g., ["minimax/fp8"]
+const (
+	MAX_REFINEMENT_ITERATIONS = 9  // Total: 1 initial + 9 refinements = 10 calls max
+	TARGET_SEARCH_TERM_COUNT  = 15 // We want exactly 15 search terms
+)
+
+var (
+	SEARCH_TERMS_MODEL     = MINIMAX_M2.Name()
+	SEARCH_TERMS_PROVIDERS = []string{MINIMAX_M2["Minimax"]}
+)
+
+// SearchTermAgent - The obsessed search term craftsman
+type SearchTermAgent struct {
+	// Core inputs
+	theme        string
+	baseKeywords []string
 	
-	// Prompts (injected externally for maximum flexibility)
-	SystemPrompt     string // Agent's role and expertise
-	UserPromptFormat string // Task description with %s placeholder for theme/input
+	// API config
+	apiKey       string
+	modelName    string
+	providers    []string
 	
-	// Tools (injected externally - agent is tool-agnostic)
-	Tools []openrouter.Tool
-	
-	// Behavior tuning
-	Temperature   float64 // Creativity vs determinism
-	MaxIterations int     // Safety limit for the thinking loop
-	
-	// API credentials
-	APIKey     string
-	HTTPReferer string
-	XTitle      string
+	// Current state
+	currentTerms []string
+	iteration    int
 }
 
-// AgentState tracks the agent's internal state throughout its execution.
-type AgentState struct {
-	iteration int                                   // Current iteration number
-	messages  []openrouter.ChatCompletionMessage   // Conversation history
-	phase     string                                // Current phase: THINK/ACT/OBSERVE/REFINE
-	result    interface{}                           // Final result (if completed)
-	completed bool                                  // Whether task is done
-}
-
-// AgentResult represents the final output from the agent.
-type AgentResult struct {
-	Success    bool        // Whether the task completed successfully
-	Result     interface{} // The actual result data
-	Iterations int         // Number of iterations taken
-	Error      error       // Error if failed
+// SearchTermQuality - HARDCODED quality metrics for search terms
+type SearchTermQuality struct {
+	// SEO Pattern Coverage (hardcoded search term knowledge!)
+	HasComparisons bool // e.g., "X vs Y", "X alternative"
+	HasQuestions   bool // e.g., "where to find X", "how to get X"
+	HasBestLists   bool // e.g., "best X for Y", "top X in 2025"
+	HasValueTerms  bool // e.g., "unlimited X", "free X trial"
+	HasFormatMix   bool // e.g., "X audiobooks", "X ebooks"
+	HasUserIntent  bool // e.g., "X for beginners", "X for commute"
+	
+	// Diversity
+	DiversityScore float64 // How unique are the terms?
+	
+	// Coverage
+	TermCount int
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🎯 CORE AGENT: The Beautiful Thinking Loop
+// 🎯 MAIN ENTRY POINT
 // ═══════════════════════════════════════════════════════════════════════════
 
-// RunAgent executes the AI agent with THINK → ACT → OBSERVE → REFINE loop.
-// This is the main entry point - pure, modular, and magnificent!
-func RunAgent(ctx context.Context, config AgentConfig, input string) AgentResult {
-	log.Printf("🚀 Agent started with model: %s", config.ModelName)
+// NewSearchTermAgent creates a new specialized search term generator
+func NewSearchTermAgent(theme string, baseKeywords []string, apiKey string) *SearchTermAgent {
+	return &SearchTermAgent{
+		theme:        theme,
+		baseKeywords: baseKeywords,
+		apiKey:       apiKey,
+		modelName:    SEARCH_TERMS_MODEL,
+		providers:    SEARCH_TERMS_PROVIDERS,
+		iteration:    0,
+	}
+}
+
+// Generate - The main loop: 1 initial call + up to 9 refinement calls
+func (a *SearchTermAgent) Generate(ctx context.Context) ([]string, error) {
+	log.Printf("🔍 Search Term Specialist started for theme: %s", a.theme)
 	
-	// Initialize the agent's state
-	state := &AgentState{
-		iteration: 0,
-		messages:  initializeMessages(config, input),
-		phase:     "THINK",
-		completed: false,
+	// CALL 1: Generate initial search terms
+	terms, err := a.generateInitialTerms(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("initial generation failed: %w", err)
+	}
+	a.currentTerms = terms
+	log.Printf("✨ Generated %d initial terms", len(terms))
+	
+	// CALLS 2-10: Refinement iterations (up to 9 more calls)
+	for a.iteration < MAX_REFINEMENT_ITERATIONS {
+		// Evaluate quality locally (NO API call here!)
+		quality := a.evaluateSearchTermQuality()
+		
+		// Check if we're good enough
+		if a.isGoodEnough(quality) {
+			log.Printf("✅ Quality target reached after %d total calls", a.iteration+1)
+			break
+		}
+		
+		// Refine the terms (1 API call per iteration)
+		log.Printf("🔄 Refinement iteration %d: improving coverage...", a.iteration+1)
+		refined, err := a.refineTermsIteration(ctx, quality)
+		if err != nil {
+			log.Printf("⚠️  Refinement %d failed, keeping current terms: %v", a.iteration+1, err)
+			break // Don't fail completely, just stop refining
+		}
+		
+		a.currentTerms = refined
+		a.iteration++
 	}
 	
-	// Create OpenRouter client
+	log.Printf("🎉 Final: %d terms after %d total API calls", len(a.currentTerms), a.iteration+1)
+	return a.currentTerms, nil
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🎬 GENERATION PHASE - The Initial Creative Burst
+// ═══════════════════════════════════════════════════════════════════════════
+
+func (a *SearchTermAgent) generateInitialTerms(ctx context.Context) ([]string, error) {
 	client := openrouter.NewClient(
-		config.APIKey,
-		openrouter.WithHTTPReferer(config.HTTPReferer),
-		openrouter.WithXTitle(config.XTitle),
+		a.apiKey,
+		openrouter.WithHTTPReferer("https://github.com/booktok-hype-hub"),
+		openrouter.WithXTitle("Search Term Specialist"),
 	)
 	
-	// 🔄 THE MAGNIFICENT LOOP - Where the magic happens!
-	for state.iteration < config.MaxIterations && !state.completed {
-		state.iteration++
-		log.Printf("\n═══ Iteration %d/%d ═══", state.iteration, config.MaxIterations)
-		
-		// 💭 THINK: Agent reasons about current state
-		if err := think(ctx, client, config, state); err != nil {
-			return AgentResult{Success: false, Error: err, Iterations: state.iteration}
-		}
-		
-		// 🎬 ACT: Agent executes action (tool call or answer)
-		response, err := act(ctx, client, config, state)
-		if err != nil {
-			return AgentResult{Success: false, Error: err, Iterations: state.iteration}
-		}
-		
-		// 👁️ OBSERVE: Agent processes the action result
-		if err := observe(state, response); err != nil {
-			return AgentResult{Success: false, Error: err, Iterations: state.iteration}
-		}
-		
-		// ✨ REFINE: Agent decides whether to continue or conclude
-		if refine(state) {
-			log.Printf("✅ Task completed in %d iterations", state.iteration)
-			return AgentResult{
-				Success:    true,
-				Result:     state.result,
-				Iterations: state.iteration,
-			}
-		}
-	}
+	keywordList := strings.Join(a.baseKeywords, ", ")
 	
-	// Max iterations reached without completion
-	if !state.completed {
-		log.Printf("⚠️  Max iterations (%d) reached", config.MaxIterations)
-		return AgentResult{
-			Success:    false,
-			Error:      fmt.Errorf("max iterations reached without completion"),
-			Iterations: state.iteration,
-		}
-	}
+	// HARDCODED search term generation prompt - SPECIALIZED!
+	systemPrompt := `You are a SEO search term specialist. Your ONLY job is generating highly specific, conversion-focused search terms for book discovery and audiobook services.
+
+You are an EXPERT at crafting search queries that real users type when looking for content.`
+
+	userPrompt := fmt.Sprintf(`Generate EXACTLY %d specific, must-target search terms for a Nextory landing page.
+
+Theme: "%s"
+Base Keywords: %s
+
+REQUIREMENTS - You MUST include diverse search patterns:
+✓ Comparison terms (e.g., "X vs Y", "X alternative")
+✓ Question-based (e.g., "where to find X", "how to get X")  
+✓ Best/Top lists (e.g., "best X for Y", "top X in 2025")
+✓ Value-focused (e.g., "unlimited X", "free X trial")
+✓ Format combinations (e.g., "X audiobooks", "X ebooks")
+✓ User intent (e.g., "X for beginners", "X for commute")
+✓ Specific use cases (e.g., "X for family", "X for kids")
+
+Make them SPECIFIC and CONVERSION-FOCUSED!
+Use the submit_search_terms tool with EXACTLY %d terms.`, 
+		TARGET_SEARCH_TERM_COUNT, a.theme, keywordList, TARGET_SEARCH_TERM_COUNT)
 	
-	return AgentResult{Success: true, Result: state.result, Iterations: state.iteration}
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 🧩 PHASE IMPLEMENTATIONS: Each phase with single responsibility
-// ═══════════════════════════════════════════════════════════════════════════
-
-// initializeMessages sets up the initial conversation context.
-func initializeMessages(config AgentConfig, input string) []openrouter.ChatCompletionMessage {
-	return []openrouter.ChatCompletionMessage{
-		{
-			Role: openrouter.ChatMessageRoleSystem,
-			Content: openrouter.Content{
-				Text: config.SystemPrompt,
+	resp, err := client.CreateChatCompletion(ctx, openrouter.ChatCompletionRequest{
+		Model: a.modelName,
+		Messages: []openrouter.ChatCompletionMessage{
+			{
+				Role:    openrouter.ChatMessageRoleSystem,
+				Content: openrouter.Content{Text: systemPrompt},
+			},
+			{
+				Role:    openrouter.ChatMessageRoleUser,
+				Content: openrouter.Content{Text: userPrompt},
 			},
 		},
-		{
-			Role: openrouter.ChatMessageRoleUser,
-			Content: openrouter.Content{
-				Text: fmt.Sprintf(config.UserPromptFormat, input),
-			},
-		},
-	}
-}
-
-// think prepares the agent for the next action.
-// In this implementation, thinking happens implicitly in the LLM call.
-func think(ctx context.Context, client *openrouter.Client, config AgentConfig, state *AgentState) error {
-	state.phase = "THINK"
-	log.Printf("💭 THINK: Planning next action...")
-	// Thinking is embedded in the model's reasoning process
-	return nil
-}
-
-// act executes the agent's chosen action by calling the LLM.
-func act(ctx context.Context, client *openrouter.Client, config AgentConfig, state *AgentState) (*openrouter.ChatCompletionResponse, error) {
-	state.phase = "ACT"
-	log.Printf("🎬 ACT: Executing action...")
-	
-	// Build the request
-	req := openrouter.ChatCompletionRequest{
-		Model:       config.ModelName,
-		Messages:    state.messages,
-		Tools:       config.Tools,
-		Temperature: float32(config.Temperature),
-	}
-	
-	// Add provider configuration if specified
-	if len(config.Providers) > 0 {
-		req.Provider = &openrouter.ChatProvider{
-			Order:          config.Providers,
+		Tools:       a.getSearchTermTool(),
+		Temperature: 0.8, // Creative but focused
+		Provider: &openrouter.ChatProvider{
+			Order:          a.providers,
 			AllowFallbacks: boolPtr(false),
-		}
-	}
+		},
+	})
 	
-	// Execute the action (LLM call)
-	resp, err := client.CreateChatCompletion(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("action failed: %w", err)
+		return nil, err
 	}
 	
-	return &resp, nil
-}
-
-// observe processes the result of the action.
-func observe(state *AgentState, response *openrouter.ChatCompletionResponse) error {
-	state.phase = "OBSERVE"
-	log.Printf("👁️  OBSERVE: Processing response...")
-	
-	if len(response.Choices) == 0 {
-		return fmt.Errorf("no response choices received")
-	}
-	
-	choice := response.Choices[0]
-	
-	// Check if agent made a tool call
-	if len(choice.Message.ToolCalls) > 0 {
-		toolCall := choice.Message.ToolCalls[0]
-		log.Printf("   → Tool called: %s", toolCall.Function.Name)
-		
-		// Parse tool arguments to get the result
-		var result map[string]interface{}
-		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &result); err != nil {
-			return fmt.Errorf("failed to parse tool arguments: %w", err)
-		}
-		
-		state.result = result
-		state.completed = true
-		return nil
-	}
-	
-	// Check if agent provided a text response (no tool call)
-	if choice.Message.Content.Text != "" {
-		log.Printf("   → Text response received")
-		state.result = choice.Message.Content.Text
-		// Continue iterating - agent might need more thinking
-		return nil
-	}
-	
-	return fmt.Errorf("unexpected response format")
-}
-
-// refine determines whether the agent should continue or conclude.
-func refine(state *AgentState) bool {
-	state.phase = "REFINE"
-	log.Printf("✨ REFINE: Evaluating completion status...")
-	
-	if state.completed {
-		log.Printf("   → Task complete!")
-		return true
-	}
-	
-	log.Printf("   → Continuing to next iteration...")
-	return false
+	return a.extractSearchTerms(resp)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🛠️ HELPER UTILITIES
+// ✨ REFINEMENT PHASE - Stateless Iteration (Fresh Context Each Time!)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ExtractSearchTerms is a convenience function for extracting search terms from agent results.
-func ExtractSearchTerms(result AgentResult) ([]string, error) {
-	if !result.Success {
-		return nil, result.Error
+func (a *SearchTermAgent) refineTermsIteration(ctx context.Context, quality SearchTermQuality) ([]string, error) {
+	client := openrouter.NewClient(
+		a.apiKey,
+		openrouter.WithHTTPReferer("https://github.com/booktok-hype-hub"),
+		openrouter.WithXTitle("Search Term Specialist"),
+	)
+	
+	// Build FOCUSED refinement prompt - NO MESSAGE HISTORY!
+	// Just current terms + what's missing = STATELESS!
+	missingPatterns := a.identifyMissingPatterns(quality)
+	
+	systemPrompt := `You are a SEO search term refinement specialist. You improve existing search terms by adding missing patterns and increasing diversity.`
+	
+	userPrompt := fmt.Sprintf(`Refine these %d search terms for theme "%s":
+
+CURRENT TERMS:
+%s
+
+MISSING PATTERNS:
+%s
+
+Generate EXACTLY %d improved search terms that:
+1. Keep the good ones from current terms
+2. Add new terms covering missing patterns
+3. Ensure high diversity and conversion focus
+
+Use the submit_search_terms tool with EXACTLY %d terms.`,
+		len(a.currentTerms),
+		a.theme,
+		a.formatTermsForPrompt(a.currentTerms),
+		missingPatterns,
+		TARGET_SEARCH_TERM_COUNT,
+		TARGET_SEARCH_TERM_COUNT)
+	
+	resp, err := client.CreateChatCompletion(ctx, openrouter.ChatCompletionRequest{
+		Model: a.modelName,
+		Messages: []openrouter.ChatCompletionMessage{
+			{
+				Role:    openrouter.ChatMessageRoleSystem,
+				Content: openrouter.Content{Text: systemPrompt},
+			},
+			{
+				Role:    openrouter.ChatMessageRoleUser,
+				Content: openrouter.Content{Text: userPrompt},
+			},
+		},
+		Tools:       a.getSearchTermTool(),
+		Temperature: 0.7, // Slightly more deterministic for refinement
+		Provider: &openrouter.ChatProvider{
+			Order:          a.providers,
+			AllowFallbacks: boolPtr(false),
+		},
+	})
+	
+	if err != nil {
+		return nil, err
 	}
 	
-	// Extract from tool call result
-	if resultMap, ok := result.Result.(map[string]interface{}); ok {
-		if terms, ok := resultMap["search_terms"].([]interface{}); ok {
-			searchTerms := make([]string, len(terms))
-			for i, term := range terms {
-				searchTerms[i] = term.(string)
-			}
-			return searchTerms, nil
-		}
-	}
-	
-	return nil, fmt.Errorf("result does not contain search_terms")
+	return a.extractSearchTerms(resp)
 }
 
-// ExtractKeywords is a convenience function for extracting keywords from agent results.
-func ExtractKeywords(result AgentResult) ([]string, error) {
-	if !result.Success {
-		return nil, result.Error
+// ═══════════════════════════════════════════════════════════════════════════
+// 📊 QUALITY EVALUATION - Local Logic (NO API CALLS!)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// evaluateSearchTermQuality - HARDCODED search term pattern detection
+func (a *SearchTermAgent) evaluateSearchTermQuality() SearchTermQuality {
+	quality := SearchTermQuality{
+		TermCount: len(a.currentTerms),
 	}
 	
-	// Extract from tool call result
-	if resultMap, ok := result.Result.(map[string]interface{}); ok {
-		if kws, ok := resultMap["keywords"].([]interface{}); ok {
-			keywords := make([]string, len(kws))
-			for i, kw := range kws {
-				keywords[i] = kw.(string)
-			}
-			return keywords, nil
+	termsLower := make([]string, len(a.currentTerms))
+	for i, term := range a.currentTerms {
+		termsLower[i] = strings.ToLower(term)
+	}
+	
+	// HARDCODED pattern detection - SEARCH TERM SPECIFIC!
+	for _, term := range termsLower {
+		// Comparison patterns
+		if strings.Contains(term, " vs ") || strings.Contains(term, " versus ") || 
+		   strings.Contains(term, "alternative") || strings.Contains(term, "comparison") {
+			quality.HasComparisons = true
+		}
+		
+		// Question patterns
+		if strings.HasPrefix(term, "where ") || strings.HasPrefix(term, "how ") ||
+		   strings.HasPrefix(term, "what ") || strings.HasPrefix(term, "which ") {
+			quality.HasQuestions = true
+		}
+		
+		// Best/Top lists
+		if strings.Contains(term, "best ") || strings.Contains(term, "top ") ||
+		   strings.Contains(term, "most popular") {
+			quality.HasBestLists = true
+		}
+		
+		// Value terms
+		if strings.Contains(term, "unlimited") || strings.Contains(term, "free") ||
+		   strings.Contains(term, "trial") || strings.Contains(term, "affordable") {
+			quality.HasValueTerms = true
+		}
+		
+		// Format mix
+		if strings.Contains(term, "audiobook") || strings.Contains(term, "ebook") ||
+		   strings.Contains(term, "book") || strings.Contains(term, "magazine") {
+			quality.HasFormatMix = true
+		}
+		
+		// User intent
+		if strings.Contains(term, " for ") {
+			quality.HasUserIntent = true
 		}
 	}
 	
-	return nil, fmt.Errorf("result does not contain keywords")
+	// Calculate diversity (simple: unique word count ratio)
+	quality.DiversityScore = a.calculateDiversity(termsLower)
+	
+	return quality
+}
+
+func (a *SearchTermAgent) calculateDiversity(terms []string) float64 {
+	wordSet := make(map[string]bool)
+	totalWords := 0
+	
+	for _, term := range terms {
+		words := strings.Fields(term)
+		totalWords += len(words)
+		for _, word := range words {
+			wordSet[word] = true
+		}
+	}
+	
+	if totalWords == 0 {
+		return 0
+	}
+	
+	return float64(len(wordSet)) / float64(totalWords)
+}
+
+// isGoodEnough - HARDCODED quality thresholds for search terms
+func (a *SearchTermAgent) isGoodEnough(quality SearchTermQuality) bool {
+	// Must have correct count
+	if quality.TermCount != TARGET_SEARCH_TERM_COUNT {
+		return false
+	}
+	
+	// Must cover at least 4 out of 6 patterns
+	patternCount := 0
+	if quality.HasComparisons { patternCount++ }
+	if quality.HasQuestions { patternCount++ }
+	if quality.HasBestLists { patternCount++ }
+	if quality.HasValueTerms { patternCount++ }
+	if quality.HasFormatMix { patternCount++ }
+	if quality.HasUserIntent { patternCount++ }
+	
+	// Must have good diversity
+	return patternCount >= 4 && quality.DiversityScore >= 0.6
+}
+
+// identifyMissingPatterns - HARDCODED search term pattern knowledge
+func (a *SearchTermAgent) identifyMissingPatterns(quality SearchTermQuality) string {
+	var missing []string
+	
+	if !quality.HasComparisons {
+		missing = append(missing, "- Comparison terms (e.g., 'X vs Y', 'X alternative')")
+	}
+	if !quality.HasQuestions {
+		missing = append(missing, "- Question-based (e.g., 'where to find X', 'how to get X')")
+	}
+	if !quality.HasBestLists {
+		missing = append(missing, "- Best/Top lists (e.g., 'best X for Y', 'top X in 2025')")
+	}
+	if !quality.HasValueTerms {
+		missing = append(missing, "- Value-focused (e.g., 'unlimited X', 'free X trial')")
+	}
+	if !quality.HasFormatMix {
+		missing = append(missing, "- Format combinations (e.g., 'X audiobooks', 'X ebooks')")
+	}
+	if !quality.HasUserIntent {
+		missing = append(missing, "- User intent (e.g., 'X for beginners', 'X for commute')")
+	}
+	
+	if len(missing) == 0 {
+		return "None - improve diversity and specificity!"
+	}
+	
+	return strings.Join(missing, "\n")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🛠️ HELPERS - Search Term Specific Utilities
+// ═══════════════════════════════════════════════════════════════════════════
+
+func (a *SearchTermAgent) getSearchTermTool() []openrouter.Tool {
+	return []openrouter.Tool{
+		{
+			Type: openrouter.ToolTypeFunction,
+			Function: &openrouter.FunctionDefinition{
+				Name:        "submit_search_terms",
+				Description: "Submit exactly 15 specific must-target search terms",
+				Parameters: json.RawMessage(`{
+					"type": "object",
+					"properties": {
+						"search_terms": {
+							"type": "array",
+							"items": {"type": "string"},
+							"description": "Array of exactly 15 specific search terms",
+							"minItems": 15,
+							"maxItems": 15
+						}
+					},
+					"required": ["search_terms"]
+				}`),
+			},
+		},
+	}
+}
+
+func (a *SearchTermAgent) extractSearchTerms(resp openrouter.ChatCompletionResponse) ([]string, error) {
+	if len(resp.Choices) == 0 || len(resp.Choices[0].Message.ToolCalls) == 0 {
+		return nil, fmt.Errorf("no tool call in response")
+	}
+	
+	var result struct {
+		SearchTerms []string `json:"search_terms"`
+	}
+	
+	args := resp.Choices[0].Message.ToolCalls[0].Function.Arguments
+	if err := json.Unmarshal([]byte(args), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse tool arguments: %w", err)
+	}
+	
+	if len(result.SearchTerms) != TARGET_SEARCH_TERM_COUNT {
+		return nil, fmt.Errorf("expected %d terms, got %d", TARGET_SEARCH_TERM_COUNT, len(result.SearchTerms))
+	}
+	
+	return result.SearchTerms, nil
+}
+
+func (a *SearchTermAgent) formatTermsForPrompt(terms []string) string {
+	var formatted []string
+	for i, term := range terms {
+		formatted = append(formatted, fmt.Sprintf("%d. %s", i+1, term))
+	}
+	return strings.Join(formatted, "\n")
 }
