@@ -130,27 +130,10 @@ func (a *SearchTermAgent) generateInitialTerms(ctx context.Context) ([]string, e
 
 	keywordList := strings.Join(a.baseKeywords, ", ")
 
-	// HARDCODED search term generation prompt - SPECIALIZED!
-	systemPrompt := `You are a SEO search term specialist. Your ONLY job is generating highly specific, conversion-focused search terms for book discovery and audiobook services.
+	// Use centralized prompts from search_terms.go
+	systemPrompt := INITIAL_GENERATION_SYSTEM_PROMPT
 
-You are an EXPERT at crafting search queries that real users type when looking for content.`
-
-	userPrompt := fmt.Sprintf(`Generate EXACTLY %d specific, must-target search terms for a Nextory landing page.
-
-Theme: "%s"
-Base Keywords: %s
-
-REQUIREMENTS - You MUST include diverse search patterns:
-✓ Comparison terms (e.g., "X vs Y", "X alternative")
-✓ Question-based (e.g., "where to find X", "how to get X")  
-✓ Best/Top lists (e.g., "best X for Y", "top X in 2025")
-✓ Value-focused (e.g., "unlimited X", "free X trial")
-✓ Format combinations (e.g., "X audiobooks", "X ebooks")
-✓ User intent (e.g., "X for beginners", "X for commute")
-✓ Specific use cases (e.g., "X for family", "X for kids")
-
-Make them SPECIFIC and CONVERSION-FOCUSED!
-Use the submit_search_terms tool with EXACTLY %d terms.`,
+	userPrompt := fmt.Sprintf(INITIAL_GENERATION_USER_PROMPT_TEMPLATE,
 		TARGET_SEARCH_TERM_COUNT, a.theme, keywordList, TARGET_SEARCH_TERM_COUNT)
 
 	resp, err := client.CreateChatCompletion(ctx, openrouter.ChatCompletionRequest{
@@ -195,22 +178,9 @@ func (a *SearchTermAgent) refineTermsIteration(ctx context.Context, quality Sear
 	// Just current terms + what's missing = STATELESS!
 	missingPatterns := a.identifyMissingPatterns(quality)
 
-	systemPrompt := `You are a SEO search term refinement specialist. You improve existing search terms by adding missing patterns and increasing diversity.`
+	systemPrompt := REFINEMENT_SYSTEM_PROMPT
 
-	userPrompt := fmt.Sprintf(`Refine these %d search terms for theme "%s":
-
-CURRENT TERMS:
-%s
-
-MISSING PATTERNS:
-%s
-
-Generate EXACTLY %d improved search terms that:
-1. Keep the good ones from current terms
-2. Add new terms covering missing patterns
-3. Ensure high diversity and conversion focus
-
-Use the submit_search_terms tool with EXACTLY %d terms.`,
+	userPrompt := fmt.Sprintf(REFINEMENT_USER_PROMPT_TEMPLATE,
 		len(a.currentTerms),
 		a.theme,
 		a.formatTermsForPrompt(a.currentTerms),
