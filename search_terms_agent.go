@@ -18,20 +18,15 @@ import (
 // It's NOT a generic framework - it's a SPECIALIST with hardcoded domain knowledge!
 //
 // Constraints:
-// - Max 10 API calls per run (1 initial + up to 9 refinements)
+// - Max n API calls per run (1 initial + up to n-1 refinements)
 // - Each call has independent context (no exponential message history)
 // - Quality evaluation happens locally (no extra API calls)
 //
 // ═══════════════════════════════════════════════════════════════════════════
 
 const (
-	MAX_REFINEMENT_ITERATIONS = 9  // Total: 1 initial + 9 refinements = 10 calls max
+	MAX_REFINEMENT_ITERATIONS = 4  // Total: 1 initial + 4 refinements = 5 calls max
 	TARGET_SEARCH_TERM_COUNT  = 15 // We want exactly 15 search terms
-)
-
-var (
-	SEARCH_TERMS_MODEL     = MINIMAX_M2.Name()
-	SEARCH_TERMS_PROVIDERS = []string{MINIMAX_M2["Google"]}
 )
 
 // SearchTermAgent - The obsessed search term craftsman
@@ -72,13 +67,13 @@ type SearchTermQuality struct {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // NewSearchTermAgent creates a new specialized search term generator
-func NewSearchTermAgent(theme string, baseKeywords []string, apiKey string) *SearchTermAgent {
+func NewSearchTermAgent(theme string, baseKeywords []string, apiKey string, modelName string, providers []string) *SearchTermAgent {
 	return &SearchTermAgent{
 		theme:        theme,
 		baseKeywords: baseKeywords,
 		apiKey:       apiKey,
-		modelName:    SEARCH_TERMS_MODEL,
-		providers:    SEARCH_TERMS_PROVIDERS,
+		modelName:    modelName,
+		providers:    providers,
 		iteration:    0,
 	}
 }
